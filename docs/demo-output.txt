@@ -1,0 +1,45 @@
+$ curl /health
+{"status":"ok","uptime_s":2.7}
+$ python scripts/send_sample.py
+200 {
+  "record_id": 1,
+  "claim_id": "CLM-1001",
+  "category": "authorization",
+  "action": "Appeal with prior-auth number or request retro-auth",
+  "confidence": 0.9,
+  "provider": "rules",
+  "appeal_letter": "To: Acme Mock Insurance Appeals Department\nRe: Claim CLM-1001 | Patient Alex Fakeperson | Member ID MBR000111 | DOB 1975-04-12\n\nWe request reconsideration of the denial (CARC 197; RARC N54) for the amount of $1250.00. The denial was categorised as 'authorization'. Supporting documentation is enclosed.\n\nSincerely,\nBilling Appeals Team"
+}
+200 {
+  "record_id": 2,
+  "claim_id": "CLM-1002",
+  "category": "missing_information",
+  "action": "Correct/add missing claim data and resubmit",
+  "confidence": 0.9,
+  "provider": "rules",
+  "appeal_letter": "To: Example Health Appeals Department\nRe: Claim CLM-1002 | Patient Sam Notreal | Member ID MBR000222 | DOB 1990-09-30\n\nWe request reconsideration of the denial (CARC 16; RARC M51) for the amount of $310.50. The denial was categorised as 'missing information'. Supporting documentation is enclosed.\n\nSincerely,\nBilling Appeals Team"
+}
+200 {
+  "record_id": 3,
+  "claim_id": "CLM-1003",
+  "category": "timely_filing",
+  "action": "Appeal with proof of timely filing (clearinghouse report)",
+  "confidence": 0.9,
+  "provider": "rules",
+  "appeal_letter": "To: Demo Care Appeals Department\nRe: Claim CLM-1003 | Patient Pat Synthetic | Member ID MBR000333 | DOB 1962-12-01\n\nWe request reconsideration of the denial (CARC 29) for the amount of $88.00. The denial was categorised as 'timely filing'. Supporting documentation is enclosed.\n\nSincerely,\nBilling Appeals Team"
+}
+bad key -> 401
+metrics -> {'denials_received': 3, 'category_authorization': 1, 'category_missing_information': 1, 'category_timely_filing': 1, 'auth_failures': 1}
+
+$ cat audit.log  (no PHI)
+{"ts": "2026-10-12T13:01:45.178476+00:00", "actor": "demo-client", "action": "denial_received", "record_id": "CLM-1001", "detail": ""}
+{"ts": "2026-10-12T13:01:45.190169+00:00", "actor": "demo-client", "action": "denial_triaged", "record_id": "1", "detail": "category=authorization provider=rules"}
+{"ts": "2026-10-12T13:01:45.201951+00:00", "actor": "demo-client", "action": "denial_received", "record_id": "CLM-1002", "detail": ""}
+{"ts": "2026-10-12T13:01:45.208410+00:00", "actor": "demo-client", "action": "denial_triaged", "record_id": "2", "detail": "category=missing_information provider=rules"}
+{"ts": "2026-10-12T13:01:45.218503+00:00", "actor": "demo-client", "action": "denial_received", "record_id": "CLM-1003", "detail": ""}
+{"ts": "2026-10-12T13:01:45.223636+00:00", "actor": "demo-client", "action": "denial_triaged", "record_id": "3", "detail": "category=timely_filing provider=rules"}
+{"ts": "2026-10-12T13:01:45.233960+00:00", "actor": "anonymous", "action": "auth_failed", "record_id": null, "detail": ""}
+$ server structured logs
+{"ts": "2026-10-12 23:01:45,192", "level": "INFO", "logger": "triage", "msg": "triaged claim=CLM-1001 record=1 category=authorization provider=rules"}
+{"ts": "2026-10-12 23:01:45,210", "level": "INFO", "logger": "triage", "msg": "triaged claim=CLM-1002 record=2 category=missing_information provider=rules"}
+{"ts": "2026-10-12 23:01:45,225", "level": "INFO", "logger": "triage", "msg": "triaged claim=CLM-1003 record=3 category=timely_filing provider=rules"}
