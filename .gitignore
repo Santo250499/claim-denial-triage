@@ -3,3 +3,15 @@ __pycache__/
 audit.log
 .venv/
 .pytest_cache/
+
+# safety: never commit local data, logs, envs or secrets
+*.db
+*.sqlite
+*.log
+.env
+.env.*
+venv/
+.venv/
+output/
+screenshots/
+__pycache__/
