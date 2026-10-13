@@ -1,0 +1,16 @@
+# One-click deploy of the real API + web UI on Render (free plan).
+# Set TRIAGE_API_KEYS in the Render dashboard; share the demo key only if you're
+# happy for anyone to post synthetic denials to it.
+services:
+  - type: web
+    name: claim-denial-triage
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: TRIAGE_API_KEYS
+        sync: false
+      - key: TOKEN_SECRET
+        generateValue: true
+      - key: TRIAGE_CORS_ORIGINS
+        value: https://santo250499.github.io

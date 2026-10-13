@@ -7,6 +7,26 @@ an LLM (or a deterministic rule engine), stores the result and writes an audit t
 
 > All data in this repo is **synthetic**. No real PHI is used.
 
+## Try it live
+
+**[santo250499.github.io/claim-denial-triage](https://santo250499.github.io/claim-denial-triage/)**
+
+Pick a sample denial (or type your own) and press *Triage this denial*. The page walks the record through
+every step and shows it exactly as each part of the system sees it: the raw payload, the masked record
+the AI provider receives, the tokenised row in the database, the real letter returned to the caller,
+and the audit trail. A built-in check confirms no name, DOB or member ID crossed the trust boundary.
+
+- **In-browser mode** (default) runs a JavaScript port of the masking, CARC rule engine and letter
+  template. Nothing leaves your browser, and the HMAC tokens are byte-for-byte identical to the
+  Python service's (same algorithm, demo secret).
+- **Live API mode** sends the denial to a running copy of this FastAPI service. The same page is served
+  at `/` by the app itself, so `uvicorn app.main:app` then <http://127.0.0.1:8000> works locally too.
+  To call a hosted server from the GitHub Pages site, open
+  `https://santo250499.github.io/claim-denial-triage/?api=https://YOUR-SERVER` and enter its API key.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Santo250499/claim-denial-triage)
+— hosts the real API + UI using `render.yaml` (set `TRIAGE_API_KEYS` when prompted).
+
 ## Architecture
 
 ```mermaid
@@ -33,8 +53,10 @@ flowchart LR
 | `app/classifier.py` | Provider pattern: `RuleBasedProvider` and `OpenAICompatibleProvider` |
 | `app/storage.py` | SQLite results + append-only audit (triggers block UPDATE/DELETE) |
 | `app/config.py` | All settings from env vars |
+| `web/index.html` | Live demo UI (GitHub Pages + served at `/` by the app) |
+| `.github/workflows/` | Tests on every push; Pages deploy of `web/` |
 
-Endpoints: `GET /health` (public), `POST /webhook/denial`, `GET /results/{id}`, `GET /metrics` (all need `X-API-Key`).
+Endpoints: `GET /` (demo UI, public), `GET /health` (public), `POST /webhook/denial`, `GET /results/{id}`, `GET /metrics` (all need `X-API-Key`).
 
 ## HIPAA-minded design choices
 - **Minimum necessary:** the LLM gets only the fields it needs, with PHI swapped for tokens. The DB keeps
@@ -55,14 +77,15 @@ Endpoints: `GET /health` (public), `POST /webhook/denial`, `GET /results/{id}`, 
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest -v                                   # 13 tests
-uvicorn app.main:app --port 8000            # rules mode (no API key needed)
+pytest -v                                   # 15 tests
+uvicorn app.main:app --port 8000            # rules mode; UI at http://127.0.0.1:8000
 python scripts/send_sample.py               # in another terminal
 # Optional LLM mode:
 export LLM_API_KEY=sk-... LLM_BASE_URL=https://api.openai.com/v1 LLM_MODEL=gpt-4o-mini
 # Docker:
 docker build -t denial-triage . && docker run -p 8000:8000 -e TRIAGE_API_KEYS=dev-key-123:demo-client denial-triage
 ```
-Env vars: `TRIAGE_API_KEYS` (`key:client,...`), `TOKEN_SECRET`, `TRIAGE_DB_PATH`, `TRIAGE_AUDIT_LOG`, `LLM_*`.
+Env vars: `TRIAGE_API_KEYS` (`key:client,...`), `TOKEN_SECRET`, `TRIAGE_DB_PATH`, `TRIAGE_AUDIT_LOG`,
+`TRIAGE_CORS_ORIGINS` (comma-separated browser origins allowed to call the API; empty = CORS off), `LLM_*`.
 
 See `docs/demo-output.txt` and `docs/test-output.txt` for a recorded run.

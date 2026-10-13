@@ -92,3 +92,15 @@ def test_audit_is_append_only():
 def test_metrics_count():
     client.post("/webhook/denial", json=SAMPLE, headers=H)
     assert client.get("/metrics", headers=H).json()["denials_received"] >= 1
+
+
+# ---- web UI ----
+def test_web_ui_is_served():
+    r = client.get("/")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert "Triage this denial" in r.text
+
+
+def test_cors_origins_parsing(monkeypatch):
+    monkeypatch.setattr(config, "CORS_ORIGINS", "https://a.example, https://b.example,")
+    assert config.cors_origins() == ["https://a.example", "https://b.example"]

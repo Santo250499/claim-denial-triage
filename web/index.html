@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claim Denial Triage – live demo</title>
+<meta name="description" content="Try the claim-denial triage pipeline: PHI masking, CARC classification, appeal drafting and an append-only audit trail. Synthetic data only.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #eef2f1;
+  --sheet: #ffffff;
+  --ink: #16302b;
+  --ink-soft: #4c635d;
+  --rule: #c9d5d1;
+  --phi: #f6d36b;
+  --phi-ink: #4a3a00;
+  --token: #2f62a0;
+  --token-bg: #e3ecf7;
+  --boundary: #b8402f;
+  --ok: #2c7a4b;
+  --focus: #2f62a0;
+  --mono: "Spline Sans Mono", ui-monospace, Menlo, monospace;
+  --sans: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f1a18;
+    --sheet: #172623;
+    --ink: #e2ece9;
+    --ink-soft: #9db2ac;
+    --rule: #2c3f3a;
+    --phi: #8a6d12;
+    --phi-ink: #fff3c4;
+    --token: #9cc2f0;
+    --token-bg: #1d3350;
+    --boundary: #e0725f;
+    --ok: #6fcf97;
+    --focus: #9cc2f0;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.55 var(--sans);
+}
+a { color: var(--token); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 20px; }
+
+header.top { padding: 40px 0 28px; }
+header.top h1 {
+  font-size: clamp(1.9rem, 4vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  margin: 0 0 12px;
+  max-width: 22ch;
+}
+header.top p { margin: 0; max-width: 68ch; color: var(--ink-soft); font-size: 1.05rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; font-size: .9rem; color: var(--ink-soft); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+
+mark.phi { background: var(--phi); color: var(--phi-ink); padding: 0 3px; border-radius: 2px; }
+.tok { background: var(--token-bg); color: var(--token); padding: 0 3px; border-radius: 2px; font-weight: 500; }
+
+.layout { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 28px; align-items: start; padding-bottom: 56px; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- form ---------- */
+form.claim {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 20px;
+  position: sticky; top: 16px;
+}
+@media (max-width: 900px) { form.claim { position: static; } }
+form.claim h2 { font-size: 1.1rem; margin: 0 0 4px; }
+form.claim .hint { font-size: .88rem; color: var(--ink-soft); margin: 0 0 14px; }
+.samples { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.samples button {
+  font: 500 .85rem var(--sans);
+  background: transparent; color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 999px;
+  padding: 5px 12px; cursor: pointer;
+}
+.samples button:hover { border-color: var(--ink-soft); }
+.samples button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+legend { font-weight: 600; font-size: .95rem; margin-bottom: 8px; padding: 0; }
+.field { display: grid; gap: 4px; margin-bottom: 10px; }
+.field label { font-size: .85rem; color: var(--ink-soft); }
+.field input, .field select {
+  font: 15px var(--sans); color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule); border-radius: 4px;
+  padding: 8px 10px; width: 100%;
+}
+.field input.phi-field { border-left: 4px solid var(--phi); }
+.row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.layout > *, .stage > div, .field, .field input { min-width: 0; }
+.mode { display: grid; gap: 6px; margin: 4px 0 14px; font-size: .92rem; }
+.mode label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.live-opts { display: none; border-top: 1px solid var(--rule); padding-top: 12px; margin-bottom: 4px; }
+.live-opts.on { display: block; }
+button.run {
+  width: 100%;
+  font: 600 1rem var(--sans);
+  background: var(--ink); color: var(--sheet);
+  border: 0; border-radius: 4px; padding: 12px; cursor: pointer;
+}
+button.run:hover { opacity: .9; }
+button.run:disabled { opacity: .5; cursor: progress; }
+.err { color: var(--boundary); font-size: .9rem; margin: 10px 0 0; min-height: 1.2em; }
+
+/* ---------- pipeline ---------- */
+.pipeline { display: grid; gap: 0; }
+.stage {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 0;
+}
+.stage .num {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid var(--ink); display: grid; place-items: center;
+  font-weight: 700; font-size: .95rem;
+  background: var(--paper);
+}
+.stage h3 { margin: 4px 0 2px; font-size: 1.08rem; }
+.stage .sub { margin: 0 0 10px; color: var(--ink-soft); font-size: .92rem; max-width: 70ch; }
+pre.rec {
+  margin: 0;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 14px 16px;
+  font: 13.5px/1.6 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-height: 3em;
+}
+pre.rec.empty { color: var(--ink-soft); font-family: var(--sans); font-size: .92rem; }
+
+.boundary {
+  position: relative;
+  margin: 6px 0;
+  border-top: 2px dashed var(--boundary);
+}
+.boundary span {
+  position: absolute; left: 48px; top: -0.85em;
+  background: var(--paper); color: var(--boundary);
+  padding: 0 10px; font-weight: 600; font-size: .88rem;
+}
+.boundary span.below { top: auto; bottom: -0.85em; }
+
+.verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.verdict div { background: var(--sheet); padding: 12px 14px; }
+.verdict dt { font-size: .82rem; color: var(--ink-soft); }
+.verdict dd { margin: 2px 0 0; font-weight: 600; }
+.conf-bar { height: 6px; background: var(--rule); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.conf-bar i { display: block; height: 100%; background: var(--ok); width: 0; transition: width .4s ease; }
+
+table.audit { width: 100%; border-collapse: collapse; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; font-size: .88rem; }
+table.audit th, table.audit td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.audit th { font-weight: 600; color: var(--ink-soft); font-size: .82rem; }
+table.audit td.m { font-family: var(--mono); font-size: .82rem; }
+table.audit tr:last-child td { border-bottom: 0; }
+.audit-wrap { overflow-x: auto; }
+.check { color: var(--ok); font-weight: 600; font-size: .9rem; margin-top: 8px; }
+
+footer { border-top: 1px solid var(--rule); padding: 22px 0 40px; color: var(--ink-soft); font-size: .9rem; }
+footer p { margin: 0 0 6px; max-width: 80ch; }
+
+@media (prefers-reduced-motion: reduce) { .conf-bar i { transition: none; } }
+@media (max-width: 520px) {
+  .wrap { padding: 0 16px; }
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .stage .num { width: 28px; height: 28px; font-size: .85rem; }
+  .boundary span { left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Watch a denied claim get triaged without the AI ever seeing who the patient is</h1>
+    <p>Pick a sample denial or type your own, then run it. Each step below shows the record exactly as that part of the system sees it. Every value here is synthetic, so please don't enter real patient details.</p>
+    <div class="legend" aria-label="Colour key">
+      <span><mark class="phi">Jane Doe</mark> patient data (PHI)</span>
+      <span><span class="tok">[PATIENT_1a2b3c4d]</span> token that stands in for it</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <form class="claim" id="claimForm" novalidate>
+      <h2>Denied claim</h2>
+      <p class="hint">Load a sample, or edit any field.</p>
+      <div class="samples" role="group" aria-label="Sample denials" id="samples"></div>
+
+      <fieldset>
+        <legend>Patient</legend>
+        <div class="field"><label for="patient_name">Name</label><input class="phi-field" id="patient_name" required autocomplete="off"></div>
+        <div class="row2">
+          <div class="field"><label for="dob">Date of birth</label><input class="phi-field" id="dob" placeholder="YYYY-MM-DD" required autocomplete="off"></div>
+          <div class="field"><label for="member_id">Member ID</label><input class="phi-field" id="member_id" required autocomplete="off"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Claim</legend>
+        <div class="row2">
+          <div class="field"><label for="claim_id">Claim ID</label><input id="claim_id" required></div>
+          <div class="field"><label for="amount">Amount ($)</label><input id="amount" type="number" min="0" step="0.01" required></div>
+        </div>
+        <div class="field"><label for="payer">Payer</label><input id="payer" required></div>
+        <div class="row2">
+          <div class="field"><label for="carc">Denial codes (CARC)</label><input id="carc" placeholder="e.g. CO-197" required></div>
+          <div class="field"><label for="rarc">Remark codes (RARC)</label><input id="rarc" placeholder="e.g. N54"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Where to run it</legend>
+        <div class="mode">
+          <label><input type="radio" name="mode" value="local" checked> In this browser. Nothing is sent anywhere.</label>
+          <label><input type="radio" name="mode" value="live"> On a running server, through the real API</label>
+        </div>
+        <div class="live-opts" id="liveOpts">
+          <div class="field"><label for="apiUrl">Server address</label><input id="apiUrl" placeholder="https://your-app.onrender.com" autocomplete="off"></div>
+          <div class="field"><label for="apiKey">API key</label><input id="apiKey" type="password" placeholder="X-API-Key" autocomplete="off"></div>
+        </div>
+      </fieldset>
+
+      <button class="run" type="submit" id="runBtn">Triage this denial</button>
+      <p class="err" id="err" role="alert"></p>
+    </form>
+
+    <section class="pipeline" aria-live="polite" aria-label="Pipeline result">
+      <div class="stage">
+        <div class="num">1</div>
+        <div>
+          <h3>Received from the billing system</h3>
+          <p class="sub">The webhook checks the API key and validates the payload. Patient data is still in the clear here.</p>
+          <pre class="rec empty" id="s1">Run a denial to see it arrive.</pre>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="num">2</div>
+        <div>
+          <h3>Masked before it leaves</h3>
+          <p class="sub">Name, date of birth and member ID become keyed-hash tokens. The same patient always gets the same token, and it can't be reversed without the secret.</p>
+          <pre class="rec empty" id="s2">Masked record appears here.</pre>
+        </div>
+      </div>
+
+      <div class="boundary" role="separator"><span>Trust boundary: only tokens cross this line</span></div>
+
+      <div class="stage">
+        <div class="num">3</div>
+        <div>
+          <h3>Classified and drafted by the AI provider</h3>
+          <p class="sub" id="s3sub">The provider reads the denial codes, picks a category and next action, and drafts an appeal using only tokens.</p>
+          <dl class="verdict" id="verdict">
+            <div><dt>Category</dt><dd id="v_cat">–</dd></div>
+            <div><dt>Recommended action</dt><dd id="v_act">–</dd></div>
+            <div><dt>Confidence</dt><dd id="v_conf">–</dd><div class="conf-bar"><i id="v_bar"></i></div></div>
+            <div><dt>Provider</dt><dd id="v_prov">–</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <div class="boundary" role="separator"><span class="below">Back inside the trust boundary</span></div>
+
+      <div class="stage">
+        <div class="num">4</div>
+        <div>
+          <h3>Stored in the database</h3>
+          <p class="sub">Only the tokenised letter is saved. A database leak would expose no names, dates of birth or member IDs.</p>
+          <pre class="rec empty" id="s4">Stored row appears here.</pre>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="num">5</div>
+        <div>
+          <h3>Returned to the authorised caller</h3>
+          <p class="sub">Tokens are swapped back for real values locally, so the billing team gets a letter ready to review and send.</p>
+          <pre class="rec empty" id="s5">Final appeal letter appears here.</pre>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="num">6</div>
+        <div>
+          <h3>Written to the audit trail</h3>
+          <p class="sub">Who acted, when, what they did and which record. Entries can only be appended, never edited or deleted.</p>
+          <div class="audit-wrap">
+            <table class="audit">
+              <thead><tr><th>Time (UTC)</th><th>Who</th><th>Action</th><th>Record</th><th>Detail</th></tr></thead>
+              <tbody id="auditBody"><tr><td colspan="5">No entries yet.</td></tr></tbody>
+            </table>
+          </div>
+          <p class="check" id="auditCheck" hidden></p>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>In-browser mode runs a JavaScript port of the service's masking, rule engine and letter template, so you can try it without a server. Live mode calls the real FastAPI webhook.</p>
+    <p>Source, tests and deployment notes: <a href="https://github.com/Santo250499/claim-denial-triage">github.com/Santo250499/claim-denial-triage</a></p>
+  </div>
+</footer>
+
+<script>
+/* ---------- port of app/classifier.py + app/masking.py ---------- */
+const CARC_RULES = {
+  "16": ["missing_information", "Correct/add missing claim data and resubmit"],
+  "18": ["duplicate", "Verify original claim status; do not resubmit"],
+  "27": ["eligibility", "Verify coverage dates with payer; bill correct payer"],
+  "29": ["timely_filing", "Appeal with proof of timely filing (clearinghouse report)"],
+  "50": ["medical_necessity", "Appeal with medical records / letter of medical necessity"],
+  "96": ["non_covered", "Check benefits; obtain ABN or bill patient if allowed"],
+  "97": ["bundling", "Review NCCI edits; add modifier if separately payable"],
+  "197": ["authorization", "Appeal with prior-auth number or request retro-auth"],
+  "4": ["coding", "Review procedure code/modifier and correct"],
+};
+const PHI_FIELDS = { patient_name: "PATIENT", dob: "DOB", member_id: "MEMBER" };
+// Demo-only secret. Production reads TOKEN_SECRET from the environment.
+const DEMO_SECRET = "local-dev-secret";
+const TOKEN_RE = /\[(PATIENT|DOB|MEMBER)_[0-9a-f]{8}\]/g;
+
+let hmacKey;
+async function tokenFor(label, value) {
+  hmacKey = hmacKey || await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(DEMO_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(value)));
+  const hex = [...sig].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 8);
+  return `[${label}_${hex}]`;
+}
+async function maskRecord(rec) {
+  const masked = { ...rec }, vault = {};
+  for (const [field, label] of Object.entries(PHI_FIELDS)) {
+    if (masked[field]) {
+      const tok = await tokenFor(label, String(masked[field]));
+      vault[tok] = String(masked[field]);
+      masked[field] = tok;
+    }
+  }
+  return { masked, vault };
+}
+function detokenise(text, vault) {
+  for (const [tok, real] of Object.entries(vault)) text = text.split(tok).join(real);
+  return text;
+}
+function classify(masked) {
+  for (const code of masked.carc_codes) {
+    const c = code.toUpperCase().split("-").pop();
+    if (CARC_RULES[c]) return { category: CARC_RULES[c][0], action: CARC_RULES[c][1], confidence: 0.9 };
+  }
+  return { category: "other", action: "Route to human reviewer", confidence: 0.3 };
+}
+function draftAppeal(m, category) {
+  const rarc = m.rarc_codes.length ? "; RARC " + m.rarc_codes.join(", ") : "";
+  return `To: ${m.payer} Appeals Department\n` +
+    `Re: Claim ${m.claim_id} | Patient ${m.patient_name} | Member ID ${m.member_id} | DOB ${m.dob}\n\n` +
+    `We request reconsideration of the denial (CARC ${m.carc_codes.join(", ")}${rarc}) ` +
+    `for the amount of $${Number(m.amount).toFixed(2)}. The denial was categorised as ` +
+    `'${category.replace(/_/g, " ")}'. Supporting documentation is enclosed.\n\n` +
+    "Sincerely,\nBilling Appeals Team";
+}
+
+/* ---------- samples (synthetic) ---------- */
+const SAMPLES = [
+  { label: "Prior auth missing", d: { claim_id: "CLM-1001", patient_name: "Alex Fakeperson", dob: "1975-04-12", member_id: "MBR000111", payer: "Acme Mock Insurance", carc_codes: ["CO-197"], rarc_codes: ["N54"], amount: 1250.00 } },
+  { label: "Missing info", d: { claim_id: "CLM-1002", patient_name: "Sam Notreal", dob: "1990-09-30", member_id: "MBR000222", payer: "Example Health", carc_codes: ["16"], rarc_codes: ["M51"], amount: 310.50 } },
+  { label: "Filed too late", d: { claim_id: "CLM-1003", patient_name: "Pat Synthetic", dob: "1962-12-01", member_id: "MBR000333", payer: "Demo Care", carc_codes: ["29"], rarc_codes: [], amount: 88.00 } },
+  { label: "Medical necessity", d: { claim_id: "CLM-1004", patient_name: "Jordan Madeup", dob: "1988-07-19", member_id: "MBR000444", payer: "Placeholder Health Plan", carc_codes: ["CO-50"], rarc_codes: ["N115"], amount: 2140.00 } },
+  { label: "Unknown code", d: { claim_id: "CLM-1005", patient_name: "Casey Imaginary", dob: "2001-02-14", member_id: "MBR000555", payer: "Sample Mutual", carc_codes: ["999"], rarc_codes: [], amount: 64.25 } },
+];
+
+/* ---------- rendering helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function highlight(text, phiValues) {
+  let html = esc(text);
+  html = html.replace(TOKEN_RE, t => `<span class="tok">${t}</span>`);
+  for (const v of phiValues.filter(Boolean).sort((a, b) => b.length - a.length)) {
+    const ev = esc(v);
+    html = html.split(ev).join(`<mark class="phi">${ev}</mark>`);
+  }
+  return html;
+}
+function show(id, text, phi) {
+  const el = $(id);
+  el.classList.remove("empty");
+  el.innerHTML = highlight(text, phi);
+}
+const pretty = o => JSON.stringify(o, null, 2);
+const splitCodes = s => s.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean);
+
+/* ---------- form wiring ---------- */
+const sampleBox = $("samples");
+SAMPLES.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = s.label; b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", () => loadSample(i));
+  sampleBox.appendChild(b);
+});
+function loadSample(i) {
+  const d = SAMPLES[i].d;
+  for (const k of ["claim_id", "patient_name", "dob", "member_id", "payer", "amount"]) $(k).value = d[k];
+  $("carc").value = d.carc_codes.join(", ");
+  $("rarc").value = d.rarc_codes.join(", ");
+  [...sampleBox.children].forEach((b, j) => b.setAttribute("aria-pressed", String(i === j)));
+}
+loadSample(0);
+
+const liveOpts = $("liveOpts");
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => {
+  liveOpts.classList.toggle("on", r.value === "live" && r.checked);
+}));
+
+// When the page is served by the API itself, default to live mode against the same server.
+const servedByApi = location.protocol.startsWith("http") && !location.hostname.endsWith("github.io");
+const params = new URLSearchParams(location.search);
+if (params.get("api") || servedByApi) {
+  $("apiUrl").value = params.get("api") || location.origin;
+  if (params.get("api")) {
+    document.querySelector('input[value="live"]').checked = true;
+    liveOpts.classList.add("on");
+  }
+}
+
+function readForm() {
+  const d = {
+    claim_id: $("claim_id").value.trim(),
+    patient_name: $("patient_name").value.trim(),
+    dob: $("dob").value.trim(),
+    member_id: $("member_id").value.trim(),
+    payer: $("payer").value.trim(),
+    carc_codes: splitCodes($("carc").value),
+    rarc_codes: splitCodes($("rarc").value),
+    amount: Number($("amount").value),
+  };
+  const missing = [];
+  if (!d.claim_id) missing.push("claim ID");
+  if (!d.patient_name) missing.push("patient name");
+  if (!d.dob) missing.push("date of birth");
+  if (!d.member_id) missing.push("member ID");
+  if (!d.payer) missing.push("payer");
+  if (!d.carc_codes.length) missing.push("at least one denial code");
+  if ($("amount").value === "" || !(d.amount >= 0)) missing.push("an amount of 0 or more");
+  return { d, missing };
+}
+
+/* ---------- local (in-browser) run ---------- */
+let localAudit = [];
+let localRowId = 0;
+function audit(actor, action, record_id = null, detail = "") {
+  localAudit.push({ ts: new Date().toISOString(), actor, action, record_id, detail });
+}
+async function runLocal(d) {
+  audit("browser-demo", "denial_received", d.claim_id);
+  const { masked, vault } = await maskRecord(d);
+  const result = classify(masked);
+  const letterMasked = draftAppeal(masked, result.category);
+  const rid = ++localRowId;
+  const stored = {
+    id: rid, claim_id: d.claim_id, payer: d.payer, category: result.category, action: result.action,
+    confidence: result.confidence, provider: "rules", appeal_letter_masked: letterMasked, created_at: new Date().toISOString(),
+  };
+  audit("browser-demo", "denial_triaged", String(rid), `category=${result.category} provider=rules`);
+  return {
+    masked, stored, result, provider: "rules",
+    letter: detokenise(letterMasked, vault),
+    providerInput: pretty(masked) + "\n\n--- draft returned by provider ---\n" + letterMasked,
+    auditRows: localAudit.slice(-12).reverse(),
+  };
+}
+
+/* ---------- live (real API) run ---------- */
+async function runLive(d) {
+  const base = $("apiUrl").value.trim().replace(/\/+$/, "");
+  const key = $("apiKey").value;
+  if (!base) throw new Error("Enter the server address, for example https://your-app.onrender.com.");
+  if (!key) throw new Error("Enter the API key for that server.");
+  const headers = { "Content-Type": "application/json", "X-API-Key": key };
+  let r;
+  try {
+    r = await fetch(`${base}/webhook/denial`, { method: "POST", headers, body: JSON.stringify(d) });
+  } catch {
+    throw new Error(`Couldn't reach ${base}. Check the address, that the server is running, and that it allows this site in TRIAGE_CORS_ORIGINS.`);
+  }
+  if (r.status === 401) throw new Error("The server rejected the API key (401). Check the key and try again.");
+  if (r.status === 422) throw new Error("The server rejected the payload (422). Check the date, codes and amount.");
+  if (!r.ok) throw new Error(`The server returned ${r.status}.`);
+  const body = await r.json();
+  const sr = await fetch(`${base}/results/${body.record_id}`, { headers });
+  const stored = sr.ok ? await sr.json() : { note: "Stored row could not be read back." };
+  const letterMasked = stored.appeal_letter_masked || "";
+  // Rebuild the masked view from the tokens the server actually used.
+  const masked = { ...d };
+  for (const tok of letterMasked.match(TOKEN_RE) || []) {
+    const label = tok.slice(1).split("_")[0];
+    const field = Object.keys(PHI_FIELDS).find(f => PHI_FIELDS[f] === label);
+    if (field) masked[field] = tok;
+  }
+  return {
+    masked, stored, provider: body.provider,
+    result: { category: body.category, action: body.action, confidence: body.confidence },
+    letter: body.appeal_letter,
+    providerInput: pretty(masked) + "\n\n--- tokens as stored by the server ---\n" + letterMasked,
+    auditRows: null,
+  };
+}
+
+/* ---------- submit ---------- */
+$("claimForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("err").textContent = "";
+  const { d, missing } = readForm();
+  if (missing.length) { $("err").textContent = `Add ${missing.join(", ")} to run the triage.`; return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.dob)) { $("err").textContent = "Enter the date of birth as YYYY-MM-DD."; return; }
+  const live = document.querySelector('input[name="mode"]:checked').value === "live";
+  const btn = $("runBtn");
+  btn.disabled = true; btn.textContent = live ? "Sending to server…" : "Triaging…";
+  try {
+    const out = live ? await runLive(d) : await runLocal(d);
+    const phi = [d.patient_name, d.dob, d.member_id];
+    show("s1", pretty(d), phi);
+    show("s2", out.providerInput, phi);
+    $("v_cat").textContent = out.result.category.replace(/_/g, " ");
+    $("v_act").textContent = out.result.action;
+    const conf = Number(out.result.confidence ?? 0);
+    $("v_conf").textContent = `${Math.round(conf * 100)}%`;
+    $("v_bar").style.width = `${Math.round(conf * 100)}%`;
+    $("v_prov").textContent = out.provider === "rules" ? "Rule engine (CARC lookup)" : `LLM (${out.provider})`;
+    show("s4", pretty(out.stored), phi);
+    show("s5", out.letter, phi);
+    renderAudit(out.auditRows, phi, live);
+
+    // Self-check: nothing outside the boundary or at rest contains PHI.
+    const atRest = JSON.stringify(out.stored) + JSON.stringify(out.auditRows || []);
+    const leaked = phi.filter(v => out.providerInput.includes(v) || atRest.includes(v));
+    const chk = $("auditCheck");
+    chk.hidden = false;
+    chk.style.color = leaked.length ? "var(--boundary)" : "";
+    chk.textContent = leaked.length
+      ? `Warning: patient data found outside the trust boundary (${leaked.length} value${leaked.length > 1 ? "s" : ""}).`
+      : "Checked: no patient name, date of birth or member ID reached the AI provider, the database or the audit trail.";
+  } catch (err) {
+    $("err").textContent = err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Triage this denial";
+  }
+});
+
+function renderAudit(rows, phi, live) {
+  const body = $("auditBody");
+  if (!rows) {
+    body.innerHTML = `<tr><td colspan="5">In live mode the audit trail stays on the server (audit table and audit.log). It isn't exposed over the API.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r => `<tr>
+    <td class="m">${esc(r.ts.replace("T", " ").slice(0, 19))}</td>
+    <td>${esc(r.actor)}</td><td>${esc(r.action)}</td>
+    <td class="m">${esc(r.record_id ?? "")}</td><td class="m">${highlight(r.detail, phi)}</td></tr>`).join("");
+}
+</script>
+</body>
+</html>

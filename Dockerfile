@@ -3,6 +3,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
+COPY web ./web
 # Run as non-root (least privilege)
 RUN useradd -m appuser && mkdir /data && chown appuser /data
 USER appuser

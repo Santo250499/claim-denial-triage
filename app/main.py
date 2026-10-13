@@ -6,8 +6,11 @@ import json
 import logging
 import time
 from collections import Counter
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app import config, storage
 from app.classifier import get_provider
@@ -28,6 +31,13 @@ logging.basicConfig(level=logging.INFO, handlers=[_h], force=True)
 log = logging.getLogger("triage")
 
 app = FastAPI(title="Claim Denial Triage")
+WEB_UI = Path(__file__).resolve().parent.parent / "web" / "index.html"
+
+# CORS is off unless origins are listed, e.g. the GitHub Pages demo:
+# TRIAGE_CORS_ORIGINS=https://santo250499.github.io
+if config.cors_origins():
+    app.add_middleware(CORSMiddleware, allow_origins=config.cors_origins(),
+                       allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-API-Key"])
 METRICS = Counter()  # simple in-process counters
 STARTED = time.time()
 
@@ -40,6 +50,12 @@ def require_api_key(x_api_key: str = Header(default="")) -> str:
         storage.audit("anonymous", "auth_failed")
         raise HTTPException(status_code=401, detail="invalid or missing API key")
     return client
+
+
+@app.get("/", include_in_schema=False)
+def web_ui():
+    """Public demo page. Holds no data; every API call it makes still needs a key."""
+    return FileResponse(WEB_UI, media_type="text/html")
 
 
 @app.get("/health")
